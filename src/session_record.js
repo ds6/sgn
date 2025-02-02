@@ -216,6 +216,9 @@ class SessionRecord {
     const obj = new this();
     if (data._sessions) {
       for (const [key, entry] of Object.entries(data._sessions)) {
+        if (entry.indexInfo.closed !== -1) {
+          continue
+        }
         obj.sessions[key] = SessionEntry.deserialize(entry);
       }
     }
