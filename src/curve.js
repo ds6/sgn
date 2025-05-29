@@ -1,7 +1,9 @@
+
 'use strict';
 
 const curveJs = require('curve25519-js');
 const nodeCrypto = require('crypto');
+// from: https://github.com/digitalbazaar/x25519-key-agreement-key-2019/blob/master/lib/crypto.js
 const PUBLIC_KEY_DER_PREFIX = Buffer.from([
     48, 42, 48, 5, 6, 3, 43, 101, 110, 3, 33, 0
 ]);
@@ -11,27 +13,22 @@ const PRIVATE_KEY_DER_PREFIX = Buffer.from([
 ]);
 
 function validatePrivKey(privKey) {
-    if (privKey === undefined) {
-        throw new Error("Undefined private key");
-    }
-    if (!(privKey instanceof Buffer)) {
-        throw new Error(`Invalid private key type: ${privKey.constructor.name}`);
-    }
-    if (privKey.byteLength != 32) {
-        throw new Error(`Incorrect private key length: ${privKey.byteLength}`);
+    if (!Buffer.isBuffer(privKey) || privKey.length !== 32) {
+        throw new Error(`Invalid private key`);
     }
 }
 
 function scrubPubKeyFormat(pubKey) {
-    if (!(pubKey instanceof Buffer)) {
-        throw new Error(`Invalid public key type: ${pubKey.constructor.name}`);
+    if (!Buffer.isBuffer(pubKey)) {
+        throw new Error(`Invalid public key type: ${pubKey?.constructor?.name || typeof pubKey}`);
     }
-    if (pubKey === undefined || ((pubKey.byteLength != 33 || pubKey[0] != 5) && pubKey.byteLength != 32)) {
+    if ((pubKey.length !== 33 || pubKey[0] !== 5) && pubKey.length !== 32) {
         throw new Error("Invalid public key");
     }
-    if (pubKey.byteLength == 33) {
-        return pubKey.slice(1);
+    if (pubKey.length === 33) {
+        return pubKey.subarray(1);
     } else {
+        console.warn("WARNING: Expected pubkey of length 33, please report the ST and client that generated it");
         return pubKey;
     }
 }
@@ -45,10 +42,12 @@ exports.generateKeyPair = function() {
                 privateKeyEncoding: { format: 'der', type: 'pkcs8' }
             }
         );
-        const pubKey = publicDerBytes.slice(PUBLIC_KEY_DER_PREFIX.length-1, PUBLIC_KEY_DER_PREFIX.length + 32);
+        // 33 bytes
+        // first byte = 5 (version byte)
+        const pubKey = publicDerBytes.subarray(PUBLIC_KEY_DER_PREFIX.length-1, PUBLIC_KEY_DER_PREFIX.length + 32);
         pubKey[0] = 5;
     
-        const privKey = privateDerBytes.slice(PRIVATE_KEY_DER_PREFIX.length, PRIVATE_KEY_DER_PREFIX.length + 32);
+        const privKey = privateDerBytes.subarray(PRIVATE_KEY_DER_PREFIX.length, PRIVATE_KEY_DER_PREFIX.length + 32);
     
         return {
             pubKey,
@@ -57,8 +56,8 @@ exports.generateKeyPair = function() {
     } else {
         const keyPair = curveJs.generateKeyPair(nodeCrypto.randomBytes(32));
         return {
-            privKey: Buffer.from(keyPair.private),
-            pubKey: Buffer.from(keyPair.public),
+            privKey: Buffer.isBuffer(keyPair.private) ? keyPair.private : Buffer.from(keyPair.private),
+            pubKey: Buffer.isBuffer(keyPair.public) ? keyPair.public : Buffer.from(keyPair.public),
         };
     }
 };

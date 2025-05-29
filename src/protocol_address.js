@@ -1,3 +1,6 @@
+// vim: ts=4:sw=4:expandtab
+
+
 class ProtocolAddress {
 
     static from(encodedAddress) {

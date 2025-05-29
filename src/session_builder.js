@@ -57,6 +57,7 @@ class SessionBuilder {
             throw new errors.UntrustedIdentityKeyError(this.addr.id, message.identityKey);
         }
         if (record.getSession(message.baseKey)) {
+            // This just means we haven't replied.
             return;
         }
         const preKeyPair = await this.storage.loadPreKey(message.preKeyId);

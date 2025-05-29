@@ -1,3 +1,5 @@
+// vim: ts=4:sw=4:expandtab
+
 exports.SignalError = class SignalError extends Error {};
 
 exports.UntrustedIdentityKeyError = class UntrustedIdentityKeyError extends exports.SignalError {
