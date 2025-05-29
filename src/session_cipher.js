@@ -146,9 +146,7 @@ class SessionCipher {
                     session,
                     plaintext
                 };
-            } catch(e) {
-                errs.push(e);
-            }
+            } catch(e) {}
         }
         throw new errors.SessionError("No matching sessions found for message");
     }
