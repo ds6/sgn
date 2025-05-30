@@ -71,14 +71,11 @@ class SessionBuilder {
         if (existingOpenSession) {
             record.closeSession(existingOpenSession);
         }
-        record.setSession(await this.initSession(false, preKeyPair, signedPreKeyPair,
-                                                 message.identityKey, message.baseKey,
-                                                 undefined, message.registrationId));
+        record.setSession(await this.initSession(false, preKeyPair, signedPreKeyPair, message.identityKey, message.baseKey, undefined, message.registrationId));
         return message.preKeyId;
     }
 
-    async initSession(isInitiator, ourEphemeralKey, ourSignedKey, theirIdentityPubKey,
-                      theirEphemeralPubKey, theirSignedPubKey, registrationId) {
+    async initSession(isInitiator, ourEphemeralKey, ourSignedKey, theirIdentityPubKey, theirEphemeralPubKey, theirSignedPubKey, registrationId) {
         if (isInitiator) {
             if (ourSignedKey) {
                 throw new Error("Invalid call to initSession");
@@ -134,9 +131,6 @@ class SessionBuilder {
             closed: -1
         };
         if (isInitiator) {
-            // If we're initiating we go ahead and set our first sending ephemeral key now,
-            // otherwise we figure it out when we first maybeStepRatchet with the remote's
-            // ephemeral key
             this.calculateSendingRatchet(session, theirSignedPubKey);
         }
         return session;

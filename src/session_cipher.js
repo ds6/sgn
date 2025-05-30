@@ -46,7 +46,7 @@ class SessionCipher {
     async getRecord() {
         const record = await this.storage.loadSession(this.addr.toString());
         if (record && !(record instanceof SessionRecord)) {
-            throw new TypeError('SessionRecord type expected from loadSession'); 
+            throw new TypeError('SessionRecord type expected from loadSession');
         }
         return record;
     }
@@ -62,46 +62,77 @@ class SessionCipher {
 
     async encrypt(data) {
         assertBuffer(data);
+
         const ourIdentityKey = await this.storage.getOurIdentity();
+
         return await this.queueJob(async () => {
             const record = await this.getRecord();
+
             if (!record) {
+                console.warn(`[encrypt] No session record found for: ${this.addr?.id}`);
                 throw new errors.SessionError("No sessions");
             }
+
             const session = record.getOpenSession();
             if (!session) {
+                console.warn(`[encrypt] No open session available for: ${this.addr?.id}`);
                 throw new errors.SessionError("No open session");
             }
+
             const remoteIdentityKey = session.indexInfo.remoteIdentityKey;
-            if (!await this.storage.isTrustedIdentity(this.addr.id, remoteIdentityKey)) {
+            const trusted = await this.storage.isTrustedIdentity(this.addr.id, remoteIdentityKey);
+
+            if (!trusted) {
                 throw new errors.UntrustedIdentityKeyError(this.addr.id, remoteIdentityKey);
             }
-            const chain = session.getChain(session.currentRatchet.ephemeralKeyPair.pubKey);
+
+            const ratchetKey = session.currentRatchet.ephemeralKeyPair.pubKey;
+            const chain = session.getChain(ratchetKey);
+
+            if (!chain) {
+                throw new Error("No valid chain found in session");
+            }
+
             if (chain.chainType === ChainType.RECEIVING) {
                 throw new Error("Tried to encrypt on a receiving chain");
             }
-            this.fillMessageKeys(chain, chain.chainKey.counter + 1);
-            const keys = crypto.deriveSecrets(chain.messageKeys[chain.chainKey.counter],
-                                              Buffer.alloc(32), Buffer.from("WhisperMessageKeys"));
+
+            const counter = chain.chainKey.counter + 1;
+            this.fillMessageKeys(chain, counter);
+
+            const keys = crypto.deriveSecrets(
+                chain.messageKeys[chain.chainKey.counter],
+                Buffer.alloc(32),
+                Buffer.from("WhisperMessageKeys")
+            );
+
             delete chain.messageKeys[chain.chainKey.counter];
-            const msg = protobufs.WhisperMessage.create();
-            msg.ephemeralKey = session.currentRatchet.ephemeralKeyPair.pubKey;
-            msg.counter = chain.chainKey.counter;
-            msg.previousCounter = session.currentRatchet.previousCounter;
-            msg.ciphertext = crypto.encrypt(keys[0], data, keys[2].slice(0, 16));
+
+            const msg = protobufs.WhisperMessage.create({
+                ephemeralKey: ratchetKey,
+                counter: chain.chainKey.counter,
+                previousCounter: session.currentRatchet.previousCounter,
+                ciphertext: crypto.encrypt(keys[0], data, keys[2].slice(0, 16))
+            });
+
             const msgBuf = protobufs.WhisperMessage.encode(msg).finish();
-            const macInput = Buffer.alloc(msgBuf.byteLength + (33 * 2) + 1);
+
+            const macInput = Buffer.alloc(msgBuf.byteLength + 33 * 2 + 1);
             macInput.set(ourIdentityKey.pubKey);
             macInput.set(session.indexInfo.remoteIdentityKey, 33);
             macInput[33 * 2] = this._encodeTupleByte(VERSION, VERSION);
-            macInput.set(msgBuf, (33 * 2) + 1);
+            macInput.set(msgBuf, 33 * 2 + 1);
+
             const mac = crypto.calculateMAC(keys[1], macInput);
             const result = Buffer.alloc(msgBuf.byteLength + 9);
             result[0] = this._encodeTupleByte(VERSION, VERSION);
             result.set(msgBuf, 1);
             result.set(mac.slice(0, 8), msgBuf.byteLength + 1);
+
             await this.storeRecord(record);
+
             let type, body;
+
             if (session.pendingPreKey) {
                 type = 3;
                 const preKeyMsg = protobufs.PreKeyWhisperMessage.create({
@@ -109,21 +140,19 @@ class SessionCipher {
                     registrationId: await this.storage.getOurRegistrationId(),
                     baseKey: session.pendingPreKey.baseKey,
                     signedPreKeyId: session.pendingPreKey.signedKeyId,
-                    message: result
+                    message: result,
+                    ...(session.pendingPreKey.preKeyId && { preKeyId: session.pendingPreKey.preKeyId })
                 });
-                if (session.pendingPreKey.preKeyId) {
-                    preKeyMsg.preKeyId = session.pendingPreKey.preKeyId;
-                }
+
                 body = Buffer.concat([
                     Buffer.from([this._encodeTupleByte(VERSION, VERSION)]),
-                    Buffer.from(
-                        protobufs.PreKeyWhisperMessage.encode(preKeyMsg).finish()
-                    )
+                    Buffer.from(protobufs.PreKeyWhisperMessage.encode(preKeyMsg).finish())
                 ]);
             } else {
                 type = 1;
                 body = result;
             }
+
             return {
                 type,
                 body,
@@ -135,10 +164,10 @@ class SessionCipher {
     async decryptWithSessions(data, sessions) {
         if (!sessions.length) {
             throw new errors.SessionError("No sessions available");
-        }   
+        }
         const errs = [];
         for (const session of sessions) {
-            let plaintext; 
+            let plaintext;
             try {
                 plaintext = await this.doDecryptWhisperMessage(data, session);
                 session.indexInfo.used = Date.now();
@@ -146,7 +175,7 @@ class SessionCipher {
                     session,
                     plaintext
                 };
-            } catch(e) {
+            } catch (e) {
                 errs.push(e);
             }
         }
@@ -164,8 +193,8 @@ class SessionCipher {
             const remoteIdentityKey = result.session.indexInfo.remoteIdentityKey;
             if (!await this.storage.isTrustedIdentity(this.addr.id, remoteIdentityKey)) {
                 throw new errors.UntrustedIdentityKeyError(this.addr.id, remoteIdentityKey);
-            }   
-            if (record.isClosed(result.session)) {}
+            }
+            if (record.isClosed(result.session)) { }
             await this.storeRecord(record);
             return result.plaintext;
         });
@@ -221,7 +250,7 @@ class SessionCipher {
         const messageKey = chain.messageKeys[message.counter];
         delete chain.messageKeys[message.counter];
         const keys = crypto.deriveSecrets(messageKey, Buffer.alloc(32),
-                                          Buffer.from("WhisperMessageKeys"));
+            Buffer.from("WhisperMessageKeys"));
         const ourIdentityKey = await this.storage.getOurIdentity();
         const macInput = Buffer.alloc(messageProto.byteLength + (33 * 2) + 1);
         macInput.set(session.indexInfo.remoteIdentityKey);
@@ -276,7 +305,7 @@ class SessionCipher {
         let ratchet = session.currentRatchet;
         const sharedSecret = curve.calculateAgreement(remoteKey, ratchet.ephemeralKeyPair.privKey);
         const masterKey = crypto.deriveSecrets(sharedSecret, ratchet.rootKey,
-                                               Buffer.from("WhisperRatchet"), 2);
+            Buffer.from("WhisperRatchet"), 2);
         const chainKey = sending ? ratchet.ephemeralKeyPair.pubKey : remoteKey;
         session.addChain(chainKey, {
             messageKeys: {},
