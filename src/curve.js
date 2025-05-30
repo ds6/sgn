@@ -2,10 +2,11 @@
 
 const curveJs = require('curve25519-js');
 const nodeCrypto = require('crypto');
+
 const PUBLIC_KEY_DER_PREFIX = Buffer.from([
     48, 42, 48, 5, 6, 3, 43, 101, 110, 3, 33, 0
 ]);
-  
+
 const PRIVATE_KEY_DER_PREFIX = Buffer.from([
     48, 46, 2, 1, 0, 48, 5, 6, 3, 43, 101, 110, 4, 34, 4, 32
 ]);
@@ -92,12 +93,25 @@ exports.calculateAgreement = function(pubKey, privKey) {
     }
 };
 
-exports.calculateSignature = function(privKey, message) {
+exports.calculateSignatureSync = function(privKey, message) {
     validatePrivKey(privKey);
     if (!message) {
         throw new Error("Invalid message");
     }
     return Buffer.from(curveJs.sign(privKey, message));
+};
+
+exports.calculateSignature = async function(privKey, message) {
+    return new Promise((resolve, reject) => {
+        setImmediate(() => {
+            try {
+                const sig = exports.calculateSignatureSync(privKey, message);
+                resolve(sig);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    });
 };
 
 exports.verifySignature = function(pubKey, msg, sig) {
